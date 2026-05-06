@@ -1,0 +1,318 @@
+pipeline {
+    agent any
+
+    environment {
+        AWS_REGION        = 'ap-south-1'
+        ECR_REPO          = credentials('ECR_REPO_URL')        // e.g. 123456.dkr.ecr.ap-south-1.amazonaws.com/hotstar-clone-app
+        IMAGE_NAME        = 'hotstar-clone'
+        IMAGE_TAG         = "${env.BUILD_NUMBER}"
+        SONAR_PROJECT_KEY = 'hotstar-clone'
+        CLUSTER_NAME      = 'hotstar-clone-prod'
+        K8S_NAMESPACE     = 'hotstar'
+    }
+
+    options {
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+        timestamps()
+        timeout(time: 60, unit: 'MINUTES')
+    }
+
+    stages {
+
+        // ─────────────────────────────────────────
+        // STAGE 1 – Checkout
+        // ─────────────────────────────────────────
+        stage('Checkout') {
+            steps {
+                git branch: 'main',
+                    credentialsId: 'github-credentials',
+                    url: 'https://github.com/DevOpsInstituteMumbai-wq/Implementing-a-Secure-CI-CD-Pipeline-for-Hotstar-Clone-Using-DevSecOps-Principles.git'
+                sh 'echo "✅ Code checked out – Build #${BUILD_NUMBER}"'
+            }
+        }
+
+        // ─────────────────────────────────────────
+        // STAGE 2 – Install Dependencies
+        // ─────────────────────────────────────────
+        stage('Install Dependencies') {
+            steps {
+                sh '''
+                    echo "📦 Installing Node dependencies..."
+                    npm ci --prefer-offline
+                    echo "✅ Dependencies installed"
+                '''
+            }
+        }
+
+        // ─────────────────────────────────────────
+        // STAGE 3 – SonarQube Static Analysis
+        // ─────────────────────────────────────────
+        stage('SonarQube Analysis') {
+            steps {
+                withSonarQubeEnv('SonarQube-Server') {
+                    sh '''
+                        echo "🔍 Running SonarQube analysis..."
+                        npx sonar-scanner \
+                            -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
+                            -Dsonar.projectName="Hotstar Clone" \
+                            -Dsonar.sources=src \
+                            -Dsonar.exclusions="**/node_modules/**,**/*.test.js,**/coverage/**" \
+                            -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
+                        echo "✅ SonarQube analysis complete"
+                    '''
+                }
+            }
+        }
+
+        // ─────────────────────────────────────────
+        // STAGE 4 – Quality Gate
+        // ─────────────────────────────────────────
+        stage('Quality Gate') {
+            steps {
+                timeout(time: 5, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
+                }
+            }
+        }
+
+        // ─────────────────────────────────────────
+        // STAGE 5 – OWASP Dependency Check
+        // ─────────────────────────────────────────
+        stage('OWASP Dependency Check') {
+            steps {
+                dependencyCheck(
+                    additionalArguments: '''
+                        --scan ./
+                        --format HTML
+                        --format XML
+                        --out reports/dependency-check
+                        --prettyPrint
+                        --enableRetired
+                    ''',
+                    odcInstallation: 'OWASP-Dependency-Check'
+                )
+                dependencyCheckPublisher pattern: 'reports/dependency-check/dependency-check-report.xml'
+                sh 'echo "✅ OWASP Dependency Check complete"'
+            }
+        }
+
+        // ─────────────────────────────────────────
+        // STAGE 6 – Docker Scout FS Scan
+        // ─────────────────────────────────────────
+        stage('Docker Scout FS Scan') {
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'dockerhub-credentials',
+                    usernameVariable: 'DOCKER_USER',
+                    passwordVariable: 'DOCKER_PASS'
+                )]) {
+                    sh '''
+                        echo "🔍 Running Docker Scout filesystem scan..."
+                        echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
+                        docker scout quickview fs://.
+                        docker scout cves fs://. --exit-code --only-severity critical || true
+                        echo "✅ Docker Scout FS scan complete"
+                    '''
+                }
+            }
+        }
+
+        // ─────────────────────────────────────────
+        // STAGE 7 – Docker Build & Push to ECR
+        // ─────────────────────────────────────────
+        stage('Docker Build & Push') {
+            steps {
+                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding',
+                    credentialsId: 'aws-credentials']]) {
+                    sh '''
+                        echo "🐳 Building Docker image..."
+                        docker build \
+                            --build-arg BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ') \
+                            --build-arg VCS_REF=${GIT_COMMIT} \
+                            --build-arg VERSION=${IMAGE_TAG} \
+                            -t ${IMAGE_NAME}:${IMAGE_TAG} \
+                            -t ${IMAGE_NAME}:latest \
+                            .
+
+                        echo "🔐 Authenticating to ECR..."
+                        aws ecr get-login-password --region ${AWS_REGION} | \
+                            docker login --username AWS --password-stdin ${ECR_REPO}
+
+                        echo "📤 Tagging and pushing image..."
+                        docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${ECR_REPO}:${IMAGE_TAG}
+                        docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${ECR_REPO}:latest
+
+                        docker push ${ECR_REPO}:${IMAGE_TAG}
+                        docker push ${ECR_REPO}:latest
+
+                        echo "✅ Image pushed: ${ECR_REPO}:${IMAGE_TAG}"
+                    '''
+                }
+            }
+        }
+
+        // ─────────────────────────────────────────
+        // STAGE 8 – Docker Scout Image Scan
+        // ─────────────────────────────────────────
+        stage('Docker Scout Image Analysis') {
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'dockerhub-credentials',
+                    usernameVariable: 'DOCKER_USER',
+                    passwordVariable: 'DOCKER_PASS'
+                )]) {
+                    sh '''
+                        echo "🔍 Scanning pushed image with Docker Scout..."
+                        echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
+                        docker scout cves ${ECR_REPO}:${IMAGE_TAG} \
+                            --exit-code \
+                            --only-severity critical \
+                            --format sarif \
+                            --output reports/scout-image-report.sarif || true
+                        echo "✅ Docker Scout image analysis complete"
+                    '''
+                }
+            }
+        }
+
+        // ─────────────────────────────────────────
+        // STAGE 9 – Terraform Provision EKS
+        // ─────────────────────────────────────────
+        stage('Terraform – Provision EKS') {
+            when {
+                branch 'main'
+            }
+            steps {
+                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding',
+                    credentialsId: 'aws-credentials']]) {
+                    dir('terraform/environments/prod') {
+                        sh '''
+                            echo "🏗️  Running Terraform..."
+                            terraform init -input=false
+                            terraform validate
+                            terraform plan -out=tfplan -input=false
+                            terraform apply -auto-approve tfplan
+                            echo "✅ Infrastructure provisioned"
+
+                            # Export outputs for next stage
+                            terraform output -raw cluster_name > /tmp/cluster_name.txt
+                            terraform output -raw ecr_repo_url > /tmp/ecr_repo_url.txt
+                        '''
+                    }
+                }
+            }
+        }
+
+        // ─────────────────────────────────────────
+        // STAGE 10 – Deploy to AWS EKS
+        // ─────────────────────────────────────────
+        stage('Deploy to EKS') {
+            when {
+                branch 'main'
+            }
+            steps {
+                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding',
+                    credentialsId: 'aws-credentials']]) {
+                    sh '''
+                        echo "🚀 Configuring kubectl..."
+                        aws eks update-kubeconfig \
+                            --region ${AWS_REGION} \
+                            --name ${CLUSTER_NAME}
+
+                        echo "📁 Creating namespace..."
+                        kubectl create namespace ${K8S_NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
+
+                        echo "📦 Applying Kubernetes manifests..."
+                        # Substitute image tag in deployment manifest
+                        sed -i "s|IMAGE_PLACEHOLDER|${ECR_REPO}:${IMAGE_TAG}|g" k8s/deployment.yaml
+
+                        kubectl apply -f k8s/ -n ${K8S_NAMESPACE}
+
+                        echo "⏳ Waiting for rollout..."
+                        kubectl rollout status deployment/hotstar-app -n ${K8S_NAMESPACE} --timeout=300s
+
+                        echo "✅ Deployed successfully!"
+                        kubectl get pods -n ${K8S_NAMESPACE}
+                        kubectl get svc  -n ${K8S_NAMESPACE}
+                    '''
+                }
+            }
+        }
+
+        // ─────────────────────────────────────────
+        // STAGE 11 – OWASP ZAP Dynamic Scan
+        // ─────────────────────────────────────────
+        stage('OWASP ZAP DAST Scan') {
+            when {
+                branch 'main'
+            }
+            steps {
+                sh '''
+                    echo "🔍 Running OWASP ZAP dynamic scan..."
+                    APP_URL=$(kubectl get svc hotstar-service -n ${K8S_NAMESPACE} \
+                        -o jsonpath="{.status.loadBalancer.ingress[0].hostname}" 2>/dev/null || echo "localhost")
+
+                    mkdir -p reports/zap
+
+                    docker run --rm \
+                        -v $(pwd)/reports/zap:/zap/wrk/:rw \
+                        ghcr.io/zaproxy/zaproxy:stable zap-baseline.py \
+                        -t http://${APP_URL} \
+                        -r zap-report.html \
+                        -x zap-report.xml \
+                        -I || true
+
+                    echo "✅ OWASP ZAP scan complete"
+                '''
+            }
+        }
+
+    }
+
+    post {
+        always {
+            echo "📊 Archiving reports..."
+            archiveArtifacts artifacts: 'reports/**/*', allowEmptyArchive: true
+
+            publishHTML([
+                allowMissing: true,
+                alwaysLinkToLastBuild: true,
+                keepAll: true,
+                reportDir: 'reports/zap',
+                reportFiles: 'zap-report.html',
+                reportName: 'OWASP ZAP Report'
+            ])
+
+            publishHTML([
+                allowMissing: true,
+                alwaysLinkToLastBuild: true,
+                keepAll: true,
+                reportDir: 'reports/dependency-check',
+                reportFiles: 'dependency-check-report.html',
+                reportName: 'OWASP Dependency Check Report'
+            ])
+
+            sh 'docker image prune -f || true'
+        }
+
+        success {
+            echo "✅ Pipeline SUCCESS – Build #${BUILD_NUMBER} deployed!"
+            slackSend(
+                color: 'good',
+                message: "✅ *Hotstar Clone* – Build #${BUILD_NUMBER} deployed to EKS successfully!\nImage: `${ECR_REPO}:${IMAGE_TAG}`"
+            )
+        }
+
+        failure {
+            echo "❌ Pipeline FAILED – Build #${BUILD_NUMBER}"
+            slackSend(
+                color: 'danger',
+                message: "❌ *Hotstar Clone* – Build #${BUILD_NUMBER} FAILED!\nCheck: ${BUILD_URL}"
+            )
+        }
+
+        cleanup {
+            cleanWs()
+        }
+    }
+}

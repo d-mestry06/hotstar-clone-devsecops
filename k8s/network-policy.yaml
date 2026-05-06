@@ -1,0 +1,26 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: hotstar-network-policy
+  namespace: hotstar
+spec:
+  podSelector:
+    matchLabels:
+      app: hotstar-app
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from: []   # Allow traffic from LoadBalancer
+      ports:
+        - protocol: TCP
+          port: 3000
+  egress:
+    - to: []     # Allow all egress (DNS, external APIs)
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 80

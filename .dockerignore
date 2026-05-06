@@ -1,0 +1,13 @@
+node_modules
+npm-debug.log
+.git
+.gitignore
+.env*
+*.md
+terraform/
+kubernetes/
+scripts/
+docs/
+*.sarif
+*-report.*
+Jenkinsfile

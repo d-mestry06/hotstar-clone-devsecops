@@ -1,0 +1,14 @@
+node_modules/
+build/
+.env
+.env.local
+.env.*.local
+*.tfstate
+*.tfstate.backup
+.terraform/
+*.tfvars
+npm-audit-report.json
+trivy-report.html
+scout-*-report.sarif
+zap-report.*
+dependency-check-report.*

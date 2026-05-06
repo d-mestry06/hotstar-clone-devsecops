@@ -79,7 +79,9 @@ pipeline {
                         --disableYarnAudit
                         --disableNodeAudit
                         --format HTML
+                        --format XML
                         --format JSON
+                        --out .
                         --prettyPrint
                     ''',
                     odcInstallation: 'OWASP-DC'
@@ -184,6 +186,7 @@ pipeline {
                         exit 0
                     fi
                     docker run --rm \
+                        --network host \
                         -u root \
                         -v \$(pwd):/zap/wrk/:rw \
                         ghcr.io/zaproxy/zaproxy:stable \

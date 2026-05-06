@@ -10,6 +10,18 @@ import Row from './components/Row';
 import requests from './request';
 
 function App() {
+  const apiKey = process.env.REACT_APP_TMDB_API_KEY || '';
+  if (!apiKey) {
+    return (
+      <div className='app-error'>
+        <h1>Missing TMDB API key</h1>
+        <p>
+          Set <code>REACT_APP_TMDB_API_KEY</code> in your environment or .env file before building the app.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <>
    <div className='rel'>

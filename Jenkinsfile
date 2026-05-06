@@ -32,7 +32,8 @@ pipeline {
         // ── 2. Install Dependencies ──────────────────────────────
         stage('Install Dependencies') {
             steps {
-                sh 'npm ci'
+                sh 'npm install'
+                sh 'npm install --package-lock-only'
             }
         }
 
@@ -234,18 +235,13 @@ pipeline {
 
     post {
         always {
-            cleanWs()
+            deleteDir()
         }
         success {
             echo "Pipeline SUCCESS - Build ${BUILD_NUMBER} deployed"
         }
         failure {
             echo "Pipeline FAILED - Build ${BUILD_NUMBER}"
-            mail(
-                to: 'devops@example.com',
-                subject: "FAILED: ${JOB_NAME} #${BUILD_NUMBER}",
-                body: "Build failed. Check ${BUILD_URL}"
-            )
         }
     }
 }

@@ -41,14 +41,16 @@ pipeline {
         stage('SonarQube Analysis') {
             steps {
                 withSonarQubeEnv('sonarqube') {
-                    sh """
-                        sonar-scanner \
+                    script {
+                        def scannerHome = tool 'sonar-scanner'
+                        sh """${scannerHome}/bin/sonar-scanner \
                           -Dsonar.projectKey=${SONAR_PROJECT} \
                           -Dsonar.sources=. \
                           -Dsonar.host.url=${SONAR_HOST_URL} \
                           -Dsonar.login=${SONAR_AUTH_TOKEN} \
                           -Dsonar.exclusions='node_modules/**,build/**,**/*.test.js'
-                    """
+                        """
+                    }
                 }
             }
         }

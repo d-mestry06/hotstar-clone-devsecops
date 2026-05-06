@@ -3,6 +3,9 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
+ARG REACT_APP_TMDB_API_KEY
+ENV REACT_APP_TMDB_API_KEY=$REACT_APP_TMDB_API_KEY
+
 # Install ALL dependencies (devDeps needed for react-scripts build)
 COPY package*.json ./
 RUN npm ci
@@ -10,7 +13,7 @@ RUN npm ci
 # Copy source
 COPY . .
 
-# Build the app
+# Build the app with the TMDB key available at build time
 RUN npm run build
 
 # ─── Stage 2: Production ───────────────────────────────────────────────────────

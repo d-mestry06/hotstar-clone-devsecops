@@ -9,6 +9,7 @@ pipeline {
         SONAR_PROJECT       = 'hotstar-clone-devsecops'
         IMAGE_TAG           = "${BUILD_NUMBER}-${GIT_COMMIT[0..7]}"
         FULL_IMAGE          = "${ECR_REPO}:${IMAGE_TAG}"
+        REACT_APP_TMDB_API_KEY = credentials('tmdb-api-key')
         TRIVY_SEVERITY      = 'HIGH,CRITICAL'
     }
 
@@ -92,7 +93,7 @@ pipeline {
 
         stage('Docker Build') {
             steps {
-                sh "docker build -t ${FULL_IMAGE} -t ${ECR_REPO}:latest ."
+                sh "docker build --build-arg REACT_APP_TMDB_API_KEY=${REACT_APP_TMDB_API_KEY} -t ${FULL_IMAGE} -t ${ECR_REPO}:latest ."
             }
         }
 

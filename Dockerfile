@@ -14,7 +14,7 @@ COPY . .
 RUN npm run build
 
 # ─── Stage 2: Production ───────────────────────────────────────────────────────
-FROM nginx:1.25-alpine
+FROM nginx:1.27-alpine
 
 # Add non-root user
 RUN addgroup -g 1001 -S appgroup && \

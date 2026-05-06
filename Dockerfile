@@ -22,7 +22,6 @@ RUN addgroup -g 1001 -S appgroup && \
 
 # Copy built assets from builder
 COPY --from=builder /app/build /usr/share/nginx/html
-COPY --from=builder /app/public /usr/share/nginx/html
 
 # Custom nginx config for React SPA
 COPY nginx.conf /etc/nginx/conf.d/default.conf

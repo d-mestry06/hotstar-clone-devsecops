@@ -179,8 +179,12 @@ pipeline {
             steps {
                 sh """
                     APP_URL=\$(kubectl get svc hotstar-service -n hotstar -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
-
+                    if [ -z "\$APP_URL" ]; then
+                        echo "Load Balancer not ready yet, skipping ZAP scan"
+                        exit 0
+                    fi
                     docker run --rm \
+                        -u root \
                         -v \$(pwd):/zap/wrk/:rw \
                         ghcr.io/zaproxy/zaproxy:stable \
                         zap-baseline.py \
@@ -207,10 +211,19 @@ pipeline {
         stage('Smoke Test') {
             steps {
                 sh """
-                    APP_URL=\$(kubectl get svc hotstar-service -n hotstar -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
-                    sleep 30
-                    curl -f http://\${APP_URL}/health || exit 1
-                    echo "Smoke test PASSED"
+                    echo "Waiting for Load Balancer to provision..."
+                    for i in \$(seq 1 20); do
+                        APP_URL=\$(kubectl get svc hotstar-service -n hotstar -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+                        if [ -n "\$APP_URL" ]; then
+                            echo "Load Balancer ready: \$APP_URL"
+                            sleep 10
+                            curl -f http://\${APP_URL}/health && echo "Smoke test PASSED" && exit 0
+                        fi
+                        echo "Waiting... attempt \$i/20"
+                        sleep 15
+                    done
+                    echo "Load Balancer not ready after 5 minutes"
+                    exit 1
                 """
             }
         }

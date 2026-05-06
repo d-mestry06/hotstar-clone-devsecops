@@ -3,14 +3,12 @@ import tmdbAxiosInstance from '../tmdbAxiosInstance'
 import './Row.css'
 function Row({title,fetchUrl}) {
 const [allMovies,setAllMovies]=useState([])
-console.log(fetchUrl);
 const base_url="https://image.tmdb.org/t/p/original/"
 
 const fetchData=async()=>{
    const {data}= await tmdbAxiosInstance.get(fetchUrl)
    setAllMovies(data.results)
 }
-console.log(allMovies);
 useEffect(()=>{
     fetchData()
 },[])

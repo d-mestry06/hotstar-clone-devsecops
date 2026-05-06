@@ -5,9 +5,9 @@ pipeline {
         // ── Update these values ──────────────────────────────────
         AWS_ACCOUNT_ID      = credentials('aws-account-id')
         AWS_REGION          = 'ap-south-1'
-        ECR_REPO            = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/hotstar-devsecops-app"
-        EKS_CLUSTER         = 'hotstar-devsecops-eks'
-        SONAR_PROJECT       = 'hotstar-devsecops'
+        ECR_REPO            = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/hotstar-clone-devsecops-app"
+        EKS_CLUSTER         = 'hotstar-clone-devsecops-eks'
+        SONAR_PROJECT       = 'hotstar-clone-devsecops'
         // ─────────────────────────────────────────────────────────
         IMAGE_TAG           = "${BUILD_NUMBER}-${GIT_COMMIT[0..7]}"
         FULL_IMAGE          = "${ECR_REPO}:${IMAGE_TAG}"

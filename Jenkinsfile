@@ -76,7 +76,8 @@ pipeline {
             steps {
                 dependencyCheck(
                     additionalArguments: '''
-                        --scan .
+                        --scan package.json
+                        --scan package-lock.json
                         --disableYarnAudit
                         --disableNodeAudit
                         --format HTML

@@ -1,0 +1,100 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: hotstar-alerts
+  namespace: monitoring
+  labels:
+    app: kube-prometheus-stack
+    release: prometheus
+spec:
+  groups:
+    - name: hotstar-app
+      interval: 30s
+      rules:
+
+        - alert: HotstarAppDown
+          expr: |
+            kube_deployment_status_replicas_available{deployment="hotstar-app", namespace="hotstar"} < 1
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Hotstar app is down"
+            description: "No available replicas for hotstar-app deployment."
+
+        - alert: HotstarHighCPU
+          expr: |
+            sum(rate(container_cpu_usage_seconds_total{namespace="hotstar", container="hotstar-app"}[5m])) 
+            / sum(kube_pod_container_resource_limits{namespace="hotstar", container="hotstar-app", resource="cpu"}) > 0.8
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Hotstar app high CPU usage"
+            description: "CPU usage is above 80% for more than 5 minutes."
+
+        - alert: HotstarHighMemory
+          expr: |
+            sum(container_memory_working_set_bytes{namespace="hotstar", container="hotstar-app"})
+            / sum(kube_pod_container_resource_limits{namespace="hotstar", container="hotstar-app", resource="memory"}) > 0.8
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Hotstar app high memory usage"
+            description: "Memory usage is above 80% for more than 5 minutes."
+
+        - alert: HotstarPodCrashLooping
+          expr: |
+            rate(kube_pod_container_status_restarts_total{namespace="hotstar", container="hotstar-app"}[15m]) > 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Hotstar pod is crash looping"
+            description: "Pod {{ $labels.pod }} is restarting frequently."
+
+        - alert: HotstarHPAMaxReplicas
+          expr: |
+            kube_horizontalpodautoscaler_status_current_replicas{namespace="hotstar", horizontalpodautoscaler="hotstar-hpa"}
+            >= kube_horizontalpodautoscaler_spec_max_replicas{namespace="hotstar", horizontalpodautoscaler="hotstar-hpa"}
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Hotstar HPA at maximum replicas"
+            description: "HPA has scaled to maximum replicas - consider increasing limits."
+
+    - name: eks-nodes
+      interval: 30s
+      rules:
+
+        - alert: NodeHighCPU
+          expr: |
+            100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "EKS Node high CPU"
+            description: "Node {{ $labels.instance }} CPU usage above 80%."
+
+        - alert: NodeHighMemory
+          expr: |
+            (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100 > 80
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "EKS Node high memory"
+            description: "Node {{ $labels.instance }} memory usage above 80%."
+
+        - alert: NodeDiskPressure
+          expr: |
+            (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) * 100 < 15
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "EKS Node low disk space"
+            description: "Node {{ $labels.instance }} has less than 15% disk space."

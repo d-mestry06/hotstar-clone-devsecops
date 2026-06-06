@@ -1,0 +1,243 @@
+## kube-prometheus-stack values for hotstar-clone-devsecops
+## Installs: Prometheus, Grafana, AlertManager, node-exporter, kube-state-metrics
+
+# ── Prometheus ────────────────────────────────────────────────────────────────
+prometheus:
+  prometheusSpec:
+    retention: 7d
+    resources:
+      requests:
+        cpu: 200m
+        memory: 400Mi
+      limits:
+        cpu: 500m
+        memory: 1Gi
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 10Gi
+
+    # Discover ServiceMonitors across all namespaces
+    serviceMonitorSelectorNilUsesHelmValues: false
+    serviceMonitorSelector: {}
+    serviceMonitorNamespaceSelector: {}
+    podMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelector: {}
+    podMonitorNamespaceSelector: {}
+
+# ── Grafana ───────────────────────────────────────────────────────────────────
+grafana:
+  enabled: true
+  adminPassword: "${GRAFANA_ADMIN_PASSWORD}"
+
+  service:
+    type: LoadBalancer
+    annotations:
+      service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+      service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing"
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 300m
+      memory: 256Mi
+
+  persistence:
+    enabled: true
+    size: 5Gi
+
+  # Pre-built dashboards
+  dashboardProviders:
+    dashboardproviders.yaml:
+      apiVersion: 1
+      providers:
+        - name: default
+          orgId: 1
+          folder: ""
+          type: file
+          disableDeletion: false
+          editable: true
+          options:
+            path: /var/lib/grafana/dashboards/default
+
+  dashboards:
+    default:
+      kubernetes-cluster:
+        gnetId: 7249
+        revision: 1
+        datasource: Prometheus
+      kubernetes-pods:
+        gnetId: 6336
+        revision: 1
+        datasource: Prometheus
+      node-exporter:
+        gnetId: 1860
+        revision: 37
+        datasource: Prometheus
+      nginx:
+        gnetId: 9614
+        revision: 1
+        datasource: Prometheus
+      hotstar-app:
+        gnetId: 12708
+        revision: 1
+        datasource: Prometheus
+
+# ── AlertManager ─────────────────────────────────────────────────────────────
+alertmanager:
+  enabled: true
+  alertmanagerSpec:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 100m
+        memory: 128Mi
+
+  config:
+    global:
+      resolve_timeout: 5m
+      slack_api_url: "${SLACK_WEBHOOK_URL}"
+
+    templates:
+      - /etc/alertmanager/config/*.tmpl
+
+    route:
+      group_by: [alertname, severity, namespace]
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 4h
+      receiver: slack-default
+      routes:
+        - matchers:
+            - severity = critical
+          receiver: slack-critical
+          continue: true
+        - matchers:
+            - severity = warning
+          receiver: slack-warning
+          continue: true
+
+    receivers:
+      - name: slack-default
+        slack_configs:
+          - channel: "#dec-2025-monitoring"
+            send_resolved: true
+            icon_emoji: ":bell:"
+            username: "AlertManager"
+            title: |-
+              [{{ .Status | toUpper }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing | len }}{{ end }}] {{ .CommonLabels.alertname }}
+            text: |-
+              {{ range .Alerts }}
+              *Alert:* {{ .Annotations.summary }}
+              *Description:* {{ .Annotations.description }}
+              *Severity:* `{{ .Labels.severity }}`
+              *Namespace:* `{{ .Labels.namespace }}`
+              *Started:* {{ .StartsAt | since }}
+              {{ end }}
+
+      - name: slack-critical
+        slack_configs:
+          - channel: "#dec-2025-monitoring"
+            send_resolved: true
+            icon_emoji: ":red_circle:"
+            username: "AlertManager | CRITICAL"
+            color: danger
+            title: |-
+              :rotating_light: CRITICAL: {{ .CommonLabels.alertname }}
+            text: |-
+              {{ range .Alerts }}
+              *Alert:* {{ .Annotations.summary }}
+              *Description:* {{ .Annotations.description }}
+              *Namespace:* `{{ .Labels.namespace }}`
+              *Pod:* `{{ .Labels.pod }}`
+              *Started:* {{ .StartsAt | since }}
+              {{ end }}
+
+      - name: slack-warning
+        slack_configs:
+          - channel: "#dec-2025-monitoring"
+            send_resolved: true
+            icon_emoji: ":warning:"
+            username: "AlertManager | WARNING"
+            color: warning
+            title: |-
+              :warning: WARNING: {{ .CommonLabels.alertname }}
+            text: |-
+              {{ range .Alerts }}
+              *Alert:* {{ .Annotations.summary }}
+              *Description:* {{ .Annotations.description }}
+              *Namespace:* `{{ .Labels.namespace }}`
+              *Started:* {{ .StartsAt | since }}
+              {{ end }}
+
+    inhibit_rules:
+      - source_matchers:
+          - severity = critical
+        target_matchers:
+          - severity = warning
+        equal: [alertname, namespace]
+
+# ── Node Exporter (EC2 node metrics) ─────────────────────────────────────────
+nodeExporter:
+  enabled: true
+
+# ── Kube State Metrics (Deployment, Pod, HPA metrics) ────────────────────────
+kubeStateMetrics:
+  enabled: true
+
+# ── Default scraping rules for EKS ───────────────────────────────────────────
+defaultRules:
+  create: true
+  rules:
+    alertmanager: true
+    etcd: false        # EKS manages etcd, not accessible
+    configReloaders: true
+    general: true
+    k8s: true
+    kubeApiserverAvailability: true
+    kubeApiserverBurnrate: true
+    kubeApiserverHistogram: true
+    kubeApiserverSlos: true
+    kubelet: true
+    kubeProxy: false   # EKS manages kube-proxy
+    kubePrometheusGeneral: true
+    kubePrometheusNodeRecording: true
+    kubernetesApps: true
+    kubernetesResources: true
+    kubernetesStorage: true
+    kubernetesSystem: true
+    kubeSchedulerAlerting: false  # EKS manages scheduler
+    kubeSchedulerRecording: false
+    kubeStateMetrics: true
+    network: true
+    node: true
+    nodeExporterAlerting: true
+    nodeExporterRecording: true
+    prometheus: true
+    prometheusOperator: true
+
+# ── kubelet metrics for EKS ───────────────────────────────────────────────────
+kubelet:
+  enabled: true
+  serviceMonitor:
+    https: true
+    insecureSkipVerify: true
+
+kubeApiServer:
+  enabled: true
+
+kubeControllerManager:
+  enabled: false   # Not accessible in EKS
+
+kubeScheduler:
+  enabled: false   # Not accessible in EKS
+
+kubeEtcd:
+  enabled: false   # Not accessible in EKS

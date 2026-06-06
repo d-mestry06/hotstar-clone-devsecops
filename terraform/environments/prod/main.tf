@@ -31,28 +31,43 @@ provider "aws" {
   }
 }
 
-module "vpc" {
-  source = "../../modules/vpc"
-  project_name       = var.project_name
-  vpc_cidr           = var.vpc_cidr
-  availability_zones = var.availability_zones
-  private_subnets    = var.private_subnets
-  public_subnets     = var.public_subnets
+# ── Lookup existing manually-created VPC ─────────────────────────────────────
+data "aws_vpc" "main" {
+  id = var.vpc_id
 }
 
-module "security_groups" {
-  source       = "../../modules/security-groups"
-  project_name = var.project_name
-  vpc_id       = module.vpc.vpc_id
-  vpc_cidr     = var.vpc_cidr
+data "aws_subnets" "private" {
+  filter {
+    name   = "vpc-id"
+    values = [var.vpc_id]
+  }
+  filter {
+    name   = "subnet-id"
+    values = var.private_subnet_ids
+  }
+}
+
+data "aws_subnets" "public" {
+  filter {
+    name   = "vpc-id"
+    values = [var.vpc_id]
+  }
+  filter {
+    name   = "subnet-id"
+    values = var.public_subnet_ids
+  }
+}
+
+data "aws_security_group" "existing" {
+  id = var.security_group_id
 }
 
 module "eks" {
   source              = "../../modules/eks"
   project_name        = var.project_name
   cluster_version     = var.eks_cluster_version
-  vpc_id              = module.vpc.vpc_id
-  private_subnet_ids  = module.vpc.private_subnet_ids
+  vpc_id              = data.aws_vpc.main.id
+  private_subnet_ids  = var.private_subnet_ids
   node_instance_types = var.node_instance_types
   node_group_min      = var.node_group_min
   node_group_max      = var.node_group_max

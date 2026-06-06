@@ -7,10 +7,11 @@ pipeline {
         ECR_REPO            = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/hotstar-clone-devsecops-app"
         EKS_CLUSTER         = 'hotstar-clone-devsecops-eks'
         SONAR_PROJECT       = 'hotstar-clone-devsecops'
-        IMAGE_TAG           = "${BUILD_NUMBER}-${GIT_COMMIT[0..7]}"
+        IMAGE_TAG           = "${BUILD_NUMBER}-${GIT_COMMIT.take(7)}"
         FULL_IMAGE          = "${ECR_REPO}:${IMAGE_TAG}"
         REACT_APP_TMDB_API_KEY = credentials('tmdb-api-key')
         TRIVY_SEVERITY      = 'HIGH,CRITICAL'
+        SLACK_CHANNEL       = '#dec-2025-monitoring'
     }
 
     options {
@@ -179,6 +180,36 @@ pipeline {
             }
         }
 
+        stage('Setup Monitoring') {
+            when { branch 'main' }
+            steps {
+                withCredentials([
+                    [$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'aws-credentials'],
+                    string(credentialsId: 'slack-webhook-url',      variable: 'SLACK_WEBHOOK_URL'),
+                    string(credentialsId: 'grafana-admin-password', variable: 'GRAFANA_ADMIN_PASSWORD')
+                ]) {
+                    sh """
+                        if ! command -v helm &>/dev/null; then
+                            curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+                        fi
+                        helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+                        helm repo update
+                        kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+                        helm upgrade --install prometheus \
+                            prometheus-community/kube-prometheus-stack \
+                            --namespace monitoring \
+                            --version 58.3.0 \
+                            --values monitoring/prometheus-values.yaml \
+                            --set grafana.adminPassword=\${GRAFANA_ADMIN_PASSWORD} \
+                            --set alertmanager.config.global.slack_api_url=\${SLACK_WEBHOOK_URL} \
+                            --wait --timeout 10m
+                        kubectl apply -f monitoring/alert-rules.yaml
+                        kubectl apply -f monitoring/servicemonitor.yaml
+                    """
+                }
+            }
+        }
+
         stage('OWASP ZAP DAST') {
             steps {
                 sh """
@@ -237,12 +268,38 @@ pipeline {
     post {
         always {
             deleteDir()
+            slackSend(
+                channel: env.SLACK_CHANNEL,
+                color: currentBuild.currentResult == 'SUCCESS' ? 'good' : currentBuild.currentResult == 'FAILURE' ? 'danger' : 'warning',
+                message: """*Hotstar DevSecOps Pipeline* | Build #${BUILD_NUMBER}
+*Status* : ${currentBuild.currentResult}
+*Branch* : ${GIT_BRANCH}
+*Commit* : ${GIT_COMMIT[0..7]}
+*Image*  : ${FULL_IMAGE}
+*Duration*: ${currentBuild.durationString}
+*Logs*   : ${BUILD_URL}console"""
+            )
         }
         success {
-            echo "Pipeline SUCCESS - Build ${BUILD_NUMBER} deployed"
+            slackSend(
+                channel: env.SLACK_CHANNEL,
+                color: 'good',
+                message: """:white_check_mark: *Deployment Successful* — Build #${BUILD_NUMBER}\nImage `${FULL_IMAGE}` is live on EKS.\n<${BUILD_URL}|View Build>"""
+            )
         }
         failure {
-            echo "Pipeline FAILED - Build ${BUILD_NUMBER}"
+            slackSend(
+                channel: env.SLACK_CHANNEL,
+                color: 'danger',
+                message: """:x: *Pipeline Failed* — Build #${BUILD_NUMBER}\nStage: *${env.STAGE_NAME ?: 'Unknown'}*\nBranch: `${GIT_BRANCH}` | Commit: `${GIT_COMMIT.take(7)}`\n<${BUILD_URL}console|View Logs>"""
+            )
+        }
+        unstable {
+            slackSend(
+                channel: env.SLACK_CHANNEL,
+                color: 'warning',
+                message: """:warning: *Pipeline Unstable* — Build #${BUILD_NUMBER}\nBranch: `${GIT_BRANCH}`\n<${BUILD_URL}|View Build>"""
+            )
         }
     }
 }

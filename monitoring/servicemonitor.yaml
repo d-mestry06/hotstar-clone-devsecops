@@ -1,0 +1,18 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: hotstar-app
+  namespace: monitoring
+  labels:
+    release: prometheus   # must match kube-prometheus-stack release name
+spec:
+  namespaceSelector:
+    matchNames: [hotstar]
+  selector:
+    matchLabels:
+      app: hotstar-app
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s
+      scheme: http

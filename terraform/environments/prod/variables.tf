@@ -1,9 +1,28 @@
 variable "aws_region"          { default = "ap-south-1" }
 variable "project_name"        { default = "hotstar-clone-devsecops" }
-variable "vpc_cidr"            { default = "10.0.0.0/16" }
-variable "availability_zones"  { default = ["ap-south-1a", "ap-south-1b", "ap-south-1c"] }
-variable "private_subnets"     { default = ["10.0.1.0/24", "10.0.2.0/24", "10.0.3.0/24"] }
-variable "public_subnets"      { default = ["10.0.101.0/24", "10.0.102.0/24", "10.0.103.0/24"] }
+
+# ── Manually created VPC ───────────────────────────────────────────────────
+variable "vpc_id" {
+  description = "ID of the manually created VPC (e.g. vpc-0abc123)"
+  type        = string
+}
+
+variable "private_subnet_ids" {
+  description = "List of private subnet IDs inside the manually created VPC"
+  type        = list(string)
+}
+
+variable "public_subnet_ids" {
+  description = "List of public subnet IDs inside the manually created VPC"
+  type        = list(string)
+}
+
+variable "security_group_id" {
+  description = "ID of the manually created security group (e.g. sg-0abc123)"
+  type        = string
+}
+
+# ── EKS ───────────────────────────────────────────────────────────────
 variable "eks_cluster_version" { default = "1.35" }
 variable "node_instance_types" { default = ["c7i-flex.large"] }
 variable "node_group_min"      { default = 1 }

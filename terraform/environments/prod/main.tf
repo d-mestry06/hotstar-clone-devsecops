@@ -31,6 +31,16 @@ provider "aws" {
   }
 }
 
+provider "kubernetes" {
+  host                   = module.eks.cluster_endpoint
+  cluster_ca_certificate = base64decode(module.eks.cluster_ca)
+  exec {
+    api_version = "client.authentication.k8s.io/v1beta1"
+    command     = "aws"
+    args        = ["eks", "get-token", "--cluster-name", module.eks.cluster_name, "--region", var.aws_region]
+  }
+}
+
 # ── Lookup existing manually-created VPC ─────────────────────────────────────
 data "aws_vpc" "main" {
   id = var.vpc_id
@@ -72,6 +82,19 @@ module "eks" {
   node_group_min      = var.node_group_min
   node_group_max      = var.node_group_max
   node_group_desired  = var.node_group_desired
+}
+
+# ── Set gp2 as default StorageClass for Prometheus + Grafana PVCs ────────────
+resource "kubernetes_annotations" "gp2_default" {
+  api_version = "storage.k8s.io/v1"
+  kind        = "StorageClass"
+  metadata {
+    name = "gp2"
+  }
+  annotations = {
+    "storageclass.kubernetes.io/is-default-class" = "true"
+  }
+  depends_on = [module.eks]
 }
 
 resource "aws_ecr_repository" "hotstar" {

@@ -15,6 +15,7 @@ prometheus:
     storageSpec:
       volumeClaimTemplate:
         spec:
+          storageClassName: gp2
           accessModes: ["ReadWriteOnce"]
           resources:
             requests:
@@ -49,6 +50,9 @@ grafana:
 
   persistence:
     enabled: true
+    storageClassName: gp2
+    accessModes:
+      - ReadWriteOnce
     size: 5Gi
 
   # Pre-built dashboards
@@ -87,6 +91,12 @@ grafana:
         gnetId: 12708
         revision: 1
         datasource: Prometheus
+
+  grafana.ini:
+    dashboards:
+      default_home_dashboard_path: ""
+    plugins:
+      allow_loading_unsigned_plugins: ""
 
 # ── AlertManager ─────────────────────────────────────────────────────────────
 alertmanager:

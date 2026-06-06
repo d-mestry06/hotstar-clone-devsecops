@@ -190,7 +190,12 @@ pipeline {
         }
 
         stage('Setup Monitoring') {
-            when { branch 'main' }
+            when {
+                anyOf {
+                    branch 'main'
+                    expression { env.GIT_BRANCH ==~ /.*main/ }
+                }
+            }
             steps {
                 withCredentials([
                     [$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'aws-credentials'],
@@ -221,23 +226,26 @@ pipeline {
 
         stage('OWASP ZAP DAST') {
             steps {
-                sh """
-                    APP_URL=\$(kubectl get svc hotstar-service -n hotstar -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
-                    if [ -z "\$APP_URL" ]; then
-                        echo "Load Balancer not ready yet, skipping ZAP scan"
-                        exit 0
-                    fi
-                    docker run --rm \
-                        --network host \
-                        -u root \
-                        -v \$(pwd):/zap/wrk/:rw \
-                        ghcr.io/zaproxy/zaproxy:stable \
-                        zap-baseline.py \
-                        -t http://\${APP_URL} \
-                        -r zap-report.html \
-                        -x zap-report.xml \
-                        --auto || true
-                """
+                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'aws-credentials']]) {
+                    sh """
+                        aws eks update-kubeconfig --region ${AWS_REGION} --name ${EKS_CLUSTER}
+                        APP_URL=\$(kubectl get svc hotstar-service -n hotstar -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+                        if [ -z "\$APP_URL" ]; then
+                            echo "Load Balancer not ready yet, skipping ZAP scan"
+                            exit 0
+                        fi
+                        docker run --rm \
+                            --network host \
+                            -u root \
+                            -v \$(pwd):/zap/wrk/:rw \
+                            ghcr.io/zaproxy/zaproxy:stable \
+                            zap-baseline.py \
+                            -t http://\${APP_URL} \
+                            -r zap-report.html \
+                            -x zap-report.xml \
+                            --auto || true
+                    """
+                }
             }
             post {
                 always {
@@ -255,21 +263,24 @@ pipeline {
 
         stage('Smoke Test') {
             steps {
-                sh """
-                    echo "Waiting for Load Balancer to provision..."
-                    for i in \$(seq 1 20); do
-                        APP_URL=\$(kubectl get svc hotstar-service -n hotstar -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
-                        if [ -n "\$APP_URL" ]; then
-                            echo "Load Balancer ready: \$APP_URL"
-                            sleep 10
-                            curl -f http://\${APP_URL}/health && echo "Smoke test PASSED" && exit 0
-                        fi
-                        echo "Waiting... attempt \$i/20"
-                        sleep 15
-                    done
-                    echo "Load Balancer not ready after 5 minutes"
-                    exit 1
-                """
+                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'aws-credentials']]) {
+                    sh """
+                        aws eks update-kubeconfig --region ${AWS_REGION} --name ${EKS_CLUSTER}
+                        echo "Waiting for Load Balancer to provision..."
+                        for i in \$(seq 1 20); do
+                            APP_URL=\$(kubectl get svc hotstar-service -n hotstar -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+                            if [ -n "\$APP_URL" ]; then
+                                echo "Load Balancer ready: \$APP_URL"
+                                sleep 10
+                                curl -f http://\${APP_URL}/health && echo "Smoke test PASSED" && exit 0
+                            fi
+                            echo "Waiting... attempt \$i/20"
+                            sleep 15
+                        done
+                        echo "Load Balancer not ready after 5 minutes"
+                        exit 1
+                    """
+                }
             }
         }
     }
@@ -280,34 +291,28 @@ pipeline {
             slackSend(
                 channel: env.SLACK_CHANNEL,
                 color: currentBuild.currentResult == 'SUCCESS' ? 'good' : currentBuild.currentResult == 'FAILURE' ? 'danger' : 'warning',
-                message: """*Hotstar DevSecOps Pipeline* | Build #${BUILD_NUMBER}
-*Status* : ${currentBuild.currentResult}
-*Branch* : ${GIT_BRANCH}
-*Commit* : ${GIT_COMMIT[0..7]}
-*Image*  : ${FULL_IMAGE}
-*Duration*: ${currentBuild.durationString}
-*Logs*   : ${BUILD_URL}console"""
+                message: "Hotstar DevSecOps Pipeline | Build #${BUILD_NUMBER}\nStatus: ${currentBuild.currentResult}\nBranch: ${GIT_BRANCH}\nDuration: ${currentBuild.durationString}\nLogs: ${BUILD_URL}console"
             )
         }
         success {
             slackSend(
                 channel: env.SLACK_CHANNEL,
                 color: 'good',
-                message: """:white_check_mark: *Deployment Successful* — Build #${BUILD_NUMBER}\nImage `${FULL_IMAGE}` is live on EKS.\n<${BUILD_URL}|View Build>"""
+                message: ":white_check_mark: Deployment Successful - Build #${BUILD_NUMBER} is live on EKS. ${BUILD_URL}"
             )
         }
         failure {
             slackSend(
                 channel: env.SLACK_CHANNEL,
                 color: 'danger',
-                message: """:x: *Pipeline Failed* — Build #${BUILD_NUMBER}\nStage: *${env.STAGE_NAME ?: 'Unknown'}*\nBranch: `${GIT_BRANCH}` | Commit: `${GIT_COMMIT.take(7)}`\n<${BUILD_URL}console|View Logs>"""
+                message: ":x: Pipeline Failed - Build #${BUILD_NUMBER} | Branch: ${GIT_BRANCH} | ${BUILD_URL}console"
             )
         }
         unstable {
             slackSend(
                 channel: env.SLACK_CHANNEL,
                 color: 'warning',
-                message: """:warning: *Pipeline Unstable* — Build #${BUILD_NUMBER}\nBranch: `${GIT_BRANCH}`\n<${BUILD_URL}|View Build>"""
+                message: ":warning: Pipeline Unstable - Build #${BUILD_NUMBER} | Branch: ${GIT_BRANCH} | ${BUILD_URL}"
             )
         }
     }

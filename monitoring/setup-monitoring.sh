@@ -38,11 +38,18 @@ kubectl create namespace $NAMESPACE --dry-run=client -o yaml | kubectl apply -f 
 
 # ── 5. Install kube-prometheus-stack ─────────────────────────────────────────
 echo "▶ Installing kube-prometheus-stack..."
+
+# Require secrets to be passed as env vars
+: "${GRAFANA_ADMIN_PASSWORD:?ERROR: GRAFANA_ADMIN_PASSWORD env var is not set}"
+: "${SLACK_WEBHOOK_URL:?ERROR: SLACK_WEBHOOK_URL env var is not set}"
+
 helm upgrade --install $RELEASE_NAME \
   prometheus-community/kube-prometheus-stack \
   --namespace $NAMESPACE \
   --version $CHART_VERSION \
   --values monitoring/prometheus-values.yaml \
+  --set grafana.adminPassword="${GRAFANA_ADMIN_PASSWORD}" \
+  --set alertmanager.config.global.slack_api_url="${SLACK_WEBHOOK_URL}" \
   --wait \
   --timeout 10m
 
@@ -70,7 +77,7 @@ GRAFANA_URL=$(kubectl get svc prometheus-grafana -n $NAMESPACE \
 echo ""
 echo "  Grafana URL    : http://${GRAFANA_URL}"
 echo "  Username       : admin"
-echo "  Password       : Hotstar@2024!"
+echo "  Password       : <value of GRAFANA_ADMIN_PASSWORD>"
 echo ""
 echo "  Pre-installed Dashboards:"
 echo "  → Kubernetes Cluster Overview  (ID: 7249)"

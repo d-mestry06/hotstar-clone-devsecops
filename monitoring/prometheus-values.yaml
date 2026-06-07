@@ -170,15 +170,69 @@ alertmanager:
             {{ end }}
           text: |-
             {{ range .Alerts }}
+
             *Status:* `{{ .Status }}`
-            *Alert:* {{ .Annotations.summary }}
-            *Description:* {{ .Annotations.description }}
+
+            {{ if eq .Status "resolved" }}
+
+              {{ if eq .Labels.alertname "HotstarAppDown" }}
+              *Alert:* Hotstar app is up
+              *Description:* Replicas are available for hotstar-app deployment.
+              {{ end }}
+
+              {{ if eq .Labels.alertname "HotstarPodCrashLooping" }}
+              *Alert:* Hotstar pod recovered
+              *Description:* Pod is running normally.
+              {{ end }}
+
+              {{ if eq .Labels.alertname "HotstarHighCPU" }}
+              *Alert:* CPU usage normalized
+              *Description:* CPU utilization is below the threshold.
+              {{ end }}
+
+              {{ if eq .Labels.alertname "HotstarHighMemory" }}
+              *Alert:* Memory usage normalized
+              *Description:* Memory utilization is below the threshold.
+              {{ end }}
+
+              {{ if eq .Labels.alertname "NodeHighCPU" }}
+              *Alert:* Node CPU usage normalized
+              *Description:* Node CPU utilization is back to normal.
+              {{ end }}
+
+              {{ if eq .Labels.alertname "NodeHighMemory" }}
+              *Alert:* Node memory usage normalized
+              *Description:* Node memory utilization is back to normal.
+              {{ end }}
+
+              {{ if eq .Labels.alertname "NodeDiskPressure" }}
+              *Alert:* Disk space recovered
+              *Description:* Disk space is above the threshold.
+              {{ end }}
+
+             {{ else }}
+
+              *Alert:* {{ .Annotations.summary }}
+              *Description:* {{ .Annotations.description }}
+
+            {{ end }}
+
             *Namespace:* `{{ .Labels.namespace }}`
+
+            {{ if eq .Labels.alertname "HotstarPodCrashLooping" }}
             *Pod:* `{{ .Labels.pod }}`
+            {{ end }}
+
+            {{ if or (eq .Labels.alertname "NodeHighCPU") (eq .Labels.alertname "NodeHighMemory") (eq .Labels.alertname "NodeDiskPressure") }}
+            *Node:* `{{ .Labels.instance }}`
+            {{ end }}
+
             *Started:* {{ .StartsAt.Format "2006-01-02 15:04:05" }}
+
             {{ if eq .Status "resolved" }}
             *Resolved:* {{ .EndsAt.Format "2006-01-02 15:04:05" }}
             {{ end }}
+
             {{ end }}
 
       - name: slack-warning
@@ -196,14 +250,69 @@ alertmanager:
             {{ end }}
           text: |-
             {{ range .Alerts }}
+
             *Status:* `{{ .Status }}`
-            *Alert:* {{ .Annotations.summary }}
-            *Description:* {{ .Annotations.description }}
+
+            {{ if eq .Status "resolved" }}
+
+              {{ if eq .Labels.alertname "HotstarAppDown" }}
+              *Alert:* Hotstar app is up
+              *Description:* Replicas are available for hotstar-app deployment.
+              {{ end }}
+
+              {{ if eq .Labels.alertname "HotstarPodCrashLooping" }}
+              *Alert:* Hotstar pod recovered
+              *Description:* Pod is running normally.
+              {{ end }}
+
+              {{ if eq .Labels.alertname "HotstarHighCPU" }}
+              *Alert:* CPU usage normalized
+              *Description:* CPU utilization is below the threshold.
+              {{ end }}
+
+              {{ if eq .Labels.alertname "HotstarHighMemory" }}
+              *Alert:* Memory usage normalized
+              *Description:* Memory utilization is below the threshold.
+              {{ end }}
+
+              {{ if eq .Labels.alertname "NodeHighCPU" }}
+              *Alert:* Node CPU usage normalized
+              *Description:* Node CPU utilization is back to normal.
+              {{ end }}
+
+              {{ if eq .Labels.alertname "NodeHighMemory" }}
+              *Alert:* Node memory usage normalized
+              *Description:* Node memory utilization is back to normal.
+              {{ end }}
+
+              {{ if eq .Labels.alertname "NodeDiskPressure" }}
+              *Alert:* Disk space recovered
+              *Description:* Disk space is above the threshold.
+              {{ end }}
+
+             {{ else }}
+
+              *Alert:* {{ .Annotations.summary }}
+              *Description:* {{ .Annotations.description }}
+
+            {{ end }}
+
             *Namespace:* `{{ .Labels.namespace }}`
+
+            {{ if eq .Labels.alertname "HotstarPodCrashLooping" }}
+            *Pod:* `{{ .Labels.pod }}`
+            {{ end }}
+
+            {{ if or (eq .Labels.alertname "NodeHighCPU") (eq .Labels.alertname "NodeHighMemory") (eq .Labels.alertname "NodeDiskPressure") }}
+            *Node:* `{{ .Labels.instance }}`
+            {{ end }}
+
             *Started:* {{ .StartsAt.Format "2006-01-02 15:04:05" }}
+
             {{ if eq .Status "resolved" }}
             *Resolved:* {{ .EndsAt.Format "2006-01-02 15:04:05" }}
             {{ end }}
+
             {{ end }}
 
     inhibit_rules:

@@ -161,7 +161,7 @@ alertmanager:
           send_resolved: true
           icon_emoji: ":red_circle:"
           username: "AlertManager | CRITICAL"
-          color: danger
+          color: '{{ if eq .Status "resolved" }}good{{ else }}danger{{ end }}'
           title: |-
             {{ if eq .Status "resolved" }}
             :white_check_mark: RESOLVED: {{ .CommonLabels.alertname }}
@@ -241,7 +241,7 @@ alertmanager:
           send_resolved: true
           icon_emoji: ":warning:"
           username: "AlertManager | WARNING"
-          color: warning
+          color: '{{ if eq .Status "resolved" }}good{{ else }}warning{{ end }}'
           title: |-
             {{ if eq .Status "resolved" }}
             :white_check_mark: RESOLVED: {{ .CommonLabels.alertname }}

@@ -46,7 +46,7 @@ spec:
 
         - alert: HotstarPodCrashLooping
           expr: |
-            rate(kube_pod_container_status_restarts_total{namespace="hotstar", container="hotstar-app"}[15m]) > 0
+            increase(kube_pod_container_status_restarts_total{namespace="hotstar", container="hotstar-app"}[10m]) > 3
           for: 5m
           labels:
             severity: critical

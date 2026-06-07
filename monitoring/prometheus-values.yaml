@@ -125,6 +125,9 @@ alertmanager:
       receiver: slack-default
       routes:
         - matchers:
+          - alertname = Watchdog
+          receiver: null-receiver
+        - matchers:
             - severity = critical
           receiver: slack-critical
           continue: true
@@ -134,6 +137,7 @@ alertmanager:
           continue: true
 
     receivers:
+      - name: null-receiver
       - name: slack-default
         slack_configs:
           - channel: "#dec-2025-monitoring"
@@ -153,38 +157,54 @@ alertmanager:
 
       - name: slack-critical
         slack_configs:
-          - channel: "#dec-2025-monitoring"
-            send_resolved: true
-            icon_emoji: ":red_circle:"
-            username: "AlertManager | CRITICAL"
-            color: danger
-            title: |-
-              :rotating_light: CRITICAL: {{ .CommonLabels.alertname }}
-            text: |-
-              {{ range .Alerts }}
-              *Alert:* {{ .Annotations.summary }}
-              *Description:* {{ .Annotations.description }}
-              *Namespace:* `{{ .Labels.namespace }}`
-              *Pod:* `{{ .Labels.pod }}`
-              *Started:* {{ .StartsAt.Format "2006-01-02 15:04:05" }}
-              {{ end }}
+        - channel: "#dec-2025-monitoring"
+          send_resolved: true
+          icon_emoji: ":red_circle:"
+          username: "AlertManager | CRITICAL"
+          color: danger
+          title: |-
+            {{ if eq .Status "resolved" }}
+            :white_check_mark: RESOLVED: {{ .CommonLabels.alertname }}
+            {{ else }}
+            :rotating_light: CRITICAL: {{ .CommonLabels.alertname }}
+            {{ end }}
+          text: |-
+            {{ range .Alerts }}
+            *Status:* `{{ .Status }}`
+            *Alert:* {{ .Annotations.summary }}
+            *Description:* {{ .Annotations.description }}
+            *Namespace:* `{{ .Labels.namespace }}`
+            *Pod:* `{{ .Labels.pod }}`
+            *Started:* {{ .StartsAt.Format "2006-01-02 15:04:05" }}
+            {{ if eq .Status "resolved" }}
+            *Resolved:* {{ .EndsAt.Format "2006-01-02 15:04:05" }}
+            {{ end }}
+            {{ end }}
 
       - name: slack-warning
         slack_configs:
-          - channel: "#dec-2025-monitoring"
-            send_resolved: true
-            icon_emoji: ":warning:"
-            username: "AlertManager | WARNING"
-            color: warning
-            title: |-
-              :warning: WARNING: {{ .CommonLabels.alertname }}
-            text: |-
-              {{ range .Alerts }}
-              *Alert:* {{ .Annotations.summary }}
-              *Description:* {{ .Annotations.description }}
-              *Namespace:* `{{ .Labels.namespace }}`
-              *Started:* {{ .StartsAt.Format "2006-01-02 15:04:05" }}
-              {{ end }}
+        - channel: "#dec-2025-monitoring"
+          send_resolved: true
+          icon_emoji: ":warning:"
+          username: "AlertManager | WARNING"
+          color: warning
+          title: |-
+            {{ if eq .Status "resolved" }}
+            :white_check_mark: RESOLVED: {{ .CommonLabels.alertname }}
+            {{ else }}
+            :warning: WARNING: {{ .CommonLabels.alertname }}
+            {{ end }}
+          text: |-
+            {{ range .Alerts }}
+            *Status:* `{{ .Status }}`
+            *Alert:* {{ .Annotations.summary }}
+            *Description:* {{ .Annotations.description }}
+            *Namespace:* `{{ .Labels.namespace }}`
+            *Started:* {{ .StartsAt.Format "2006-01-02 15:04:05" }}
+            {{ if eq .Status "resolved" }}
+            *Resolved:* {{ .EndsAt.Format "2006-01-02 15:04:05" }}
+            {{ end }}
+            {{ end }}
 
     inhibit_rules:
       - source_matchers:

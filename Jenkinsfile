@@ -75,30 +75,22 @@ pipeline {
 
         stage('OWASP Dependency Check') {
             steps {
-                withCredentials([string(credentialsId: 'nvd-api-key', variable: 'NVD_API_KEY')]) {
-                    dependencyCheck(
-                        additionalArguments: """
-                            --scan package.json
-                            --scan package-lock.json
-                            --disableYarnAudit
-                            --disableNodeAudit
-                            --format HTML
-                            --format XML
-                            --format JSON
-                            --out .
-                            --prettyPrint
-                            --nvdApiKey ${NVD_API_KEY}
-                            --nvdApiDelay 6000
-                        """,
-                        odcInstallation: 'OWASP-DC'
-                    )
-                }
-            }
-            post {
-                always {
-                    dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
-                    archiveArtifacts artifacts: 'dependency-check-report.*', allowEmptyArchive: true
-                }
+                dependencyCheck(
+                    additionalArguments: '''
+                        --scan .
+                        --scan package.json
+                        --scan package-lock.json
+                        --disableYarnAudit
+                        --disableNodeAudit
+                        --format HTML
+                        --format XML
+                        --format JSON
+                        --out .
+                        --prettyPrint
+                    ''',
+                    odcInstallation: 'OWASP-DC'
+                )
+                dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
             }
         }
 

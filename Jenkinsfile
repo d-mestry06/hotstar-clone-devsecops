@@ -73,24 +73,24 @@ pipeline {
             }
         }
 
-        stage('OWASP Dependency Check') {
+        stage('Semgrep SAST') {
             steps {
-                dependencyCheck(
-                    additionalArguments: '''
-                        --scan .
-                        --scan package.json
-                        --scan package-lock.json
-                        --disableYarnAudit
-                        --disableNodeAudit
-                        --format HTML
-                        --format XML
-                        --format JSON
-                        --out .
-                        --prettyPrint
-                    ''',
-                    odcInstallation: 'OWASP-DC'
-                )
-                dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
+                sh '''
+                docker run --rm \
+                    -v "$PWD:/src" \
+                    semgrep/semgrep \
+                    semgrep scan \
+                    --config auto \
+                    --json \
+                    --output /src/semgrep-report.json \
+                    /src || true
+                '''
+            }
+
+            post {
+                always {
+                    archiveArtifacts artifacts: 'semgrep-report.json', allowEmptyArchive: true
+                }
             }
         }
 
@@ -279,12 +279,14 @@ pipeline {
 
     post {
         always {
-            deleteDir()
             slackSend(
                 channel: env.SLACK_CHANNEL,
-                color: currentBuild.currentResult == 'SUCCESS' ? 'good' : currentBuild.currentResult == 'FAILURE' ? 'danger' : 'warning',
+                color: currentBuild.currentResult == 'SUCCESS' ? 'good' :
+                    currentBuild.currentResult == 'FAILURE' ? 'danger' : 'warning',
                 message: "Hotstar DevSecOps Pipeline | Build #${BUILD_NUMBER}\nStatus: ${currentBuild.currentResult}\nBranch: ${GIT_BRANCH}\nDuration: ${currentBuild.durationString}\nLogs: ${BUILD_URL}console"
             )
+
+            deleteDir()
         }
         success {
             slackSend(

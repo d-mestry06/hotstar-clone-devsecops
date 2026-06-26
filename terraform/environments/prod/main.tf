@@ -7,7 +7,7 @@ terraform {
     }
     kubernetes = {
       source  = "hashicorp/kubernetes"
-      version = "~> 2.20"
+      version = "~> 3.2"
     }
   }
 
@@ -32,9 +32,9 @@ provider "aws" {
 }
 
 provider "kubernetes" {
-  host                   = module.eks.cluster_endpoint
-  cluster_ca_certificate = base64decode(module.eks.cluster_ca)
-  exec {
+  host                   = module.eks.cluster_endpoint               #Cluster Endpoint Comes from EKS module output.
+  cluster_ca_certificate = base64decode(module.eks.cluster_ca)       #Used to verify EKS API server certificate. Without it: TLS verification fails
+  exec {                                                             # Terraform runs a command to get Kubernetes credentials.
     api_version = "client.authentication.k8s.io/v1beta1"
     command     = "aws"
     args        = ["eks", "get-token", "--cluster-name", module.eks.cluster_name, "--region", var.aws_region]
@@ -42,7 +42,7 @@ provider "kubernetes" {
 }
 
 # ── Lookup existing manually-created VPC ─────────────────────────────────────
-data "aws_vpc" "main" {
+data "aws_vpc" "main" {        #Data source. Reads existing resource. Does not create.
   id = var.vpc_id
 }
 
@@ -92,32 +92,32 @@ resource "kubernetes_annotations" "gp2_default" {
     name = "gp2"
   }
   annotations = {
-    "storageclass.kubernetes.io/is-default-class" = "true"
+    "storageclass.kubernetes.io/is-default-class" = "true"   # PVC without StorageClass: Automatically uses: gp2
   }
-  depends_on = [module.eks]
+  depends_on = [module.eks]                                  # StorageClass changes happen after cluster creation.
 }
 
-resource "aws_ecr_repository" "hotstar" {
+resource "aws_ecr_repository" "hotstar" {                    # Creates container image repository.
   name                 = "${var.project_name}-app"
-  image_tag_mutability = "MUTABLE"
+  image_tag_mutability = "MUTABLE"                           # Allows: to be overwritten.
 
-  image_scanning_configuration {
+  image_scanning_configuration {                             # Every push triggers vulnerability scan.
     scan_on_push = true
   }
 
-  encryption_configuration {
+  encryption_configuration {                                 # Images encrypted using AWS KMS.
     encryption_type = "KMS"
   }
 }
 
-resource "aws_ecr_lifecycle_policy" "hotstar" {
+resource "aws_ecr_lifecycle_policy" "hotstar" {             # Automatically cleans old images.
   repository = aws_ecr_repository.hotstar.name
   policy = jsonencode({
     rules = [{
       rulePriority = 1
       description  = "Keep last 10 images"
-      selection    = { tagStatus = "any", countType = "imageCountMoreThan", countNumber = 10 }
-      action       = { type = "expire" }
+      selection    = { tagStatus = "any", countType = "imageCountMoreThan", countNumber = 10 }  # Applies to all images. Count-based cleanup. Keep only 10 images.
+      action       = { type = "expire" }                                                        # Delete older images.
     }]
   })
 }

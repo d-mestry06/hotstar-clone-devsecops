@@ -1,4 +1,4 @@
-# IAM Role for EKS Control Plane
+# IAM Role for EKS Control Plane   ====================================================>
 resource "aws_iam_role" "eks_cluster" {
   name = "${var.project_name}-eks-cluster-role"
   assume_role_policy = jsonencode({
@@ -12,7 +12,7 @@ resource "aws_iam_role_policy_attachment" "eks_cluster_policy" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
 }
 
-# IAM Role for Node Group
+# IAM Role for Node Group          ====================================================>
 resource "aws_iam_role" "eks_nodes" {
   name = "${var.project_name}-eks-nodes-role"
   assume_role_policy = jsonencode({
@@ -20,49 +20,52 @@ resource "aws_iam_role" "eks_nodes" {
     Statement = [{ Action = "sts:AssumeRole", Effect = "Allow", Principal = { Service = "ec2.amazonaws.com" } }]
   })
 }
-
+# workernode policy communicate with API server ,join to cluster 
 resource "aws_iam_role_policy_attachment" "eks_worker_node_policy" {
   role       = aws_iam_role.eks_nodes.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy" 
 }
 
+# Needed for VPC CNI plugin responsible for pod networking
 resource "aws_iam_role_policy_attachment" "eks_cni_policy" {
   role       = aws_iam_role.eks_nodes.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
 }
 
+# Needed for ECR read-only access so that worker nodes can pull container images
 resource "aws_iam_role_policy_attachment" "ecr_read_only" {
   role       = aws_iam_role.eks_nodes.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
 }
 
-# IAM policy for EBS CSI Driver
+# IAM policy for EBS CSI Driver Needed for PVCs 
 resource "aws_iam_role_policy_attachment" "ebs_csi_policy" {
   role       = aws_iam_role.eks_nodes.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
 }
 
-# EKS Cluster
+# EKS Cluster =======================================================================>
+
 resource "aws_eks_cluster" "main" {
   name     = "${var.project_name}-eks"
   role_arn = aws_iam_role.eks_cluster.arn
   version  = var.cluster_version
 
   vpc_config {
-    subnet_ids              = concat(var.private_subnet_ids, [])
+    subnet_ids              = var.private_subnet_ids
     endpoint_private_access = false
-    endpoint_public_access  = true
-    public_access_cidrs     = var.eks_public_access_cidrs
+    endpoint_public_access  = true                            #cluster accessible form internet
+    public_access_cidrs     = var.eks_public_access_cidrs     #Restricts who can access API.
   }
 
   access_config {
-    authentication_mode                         = "API_AND_CONFIG_MAP"
-    bootstrap_cluster_creator_admin_permissions = true
+    authentication_mode                         = "API_AND_CONFIG_MAP"      #aws-auth ConfigMap AND EKS Access Entries
+    bootstrap_cluster_creator_admin_permissions = true                      #The Terraform user becomes cluster admin automatically.
   }
 
   enabled_cluster_log_types = ["api", "audit", "authenticator", "controllerManager", "scheduler"]
 
-  depends_on = [aws_iam_role_policy_attachment.eks_cluster_policy]
+  depends_on = [aws_iam_role_policy_attachment.eks_cluster_policy]         #Ensures role policy attached before cluster creation.
 }
 
 # Launch template — enables IMDS for EBS CSI pod credential access
@@ -82,16 +85,16 @@ resource "aws_launch_template" "eks_nodes" {
 }
 
 # EKS Node Group
-resource "aws_eks_node_group" "main" {
-  cluster_name    = aws_eks_cluster.main.name
+resource "aws_eks_node_group" "main" {              #Creates managed worker nodes.
+  cluster_name    = aws_eks_cluster.main.name       #Attach to cluster.
   node_group_name = "${var.project_name}-ng"
-  node_role_arn   = aws_iam_role.eks_nodes.arn
-  subnet_ids      = var.private_subnet_ids
+  node_role_arn   = aws_iam_role.eks_nodes.arn      #Node IAM role.
+  subnet_ids      = var.private_subnet_ids          #Nodes stay private.
   instance_types  = var.node_instance_types
 
-  launch_template {
+  launch_template {                                 #Uses custom template created earlier.
     id      = aws_launch_template.eks_nodes.id
-    version = aws_launch_template.eks_nodes.latest_version
+    version = aws_launch_template.eks_nodes.latest_version  #Uses latest version.
   }
 
   scaling_config {
@@ -114,17 +117,17 @@ resource "aws_eks_node_group" "main" {
 
 # EBS CSI Driver Addon — auto picks correct version for cluster
 data "aws_eks_addon_version" "ebs_csi" {
-  addon_name         = "aws-ebs-csi-driver"
-  kubernetes_version = aws_eks_cluster.main.version
-  most_recent        = true
+  addon_name         = "aws-ebs-csi-driver"              #AWS storage driver.
+  kubernetes_version = aws_eks_cluster.main.version      #Match cluster version.
+  most_recent        = true                              #Use latest supported version.
 }
 
 resource "aws_eks_addon" "ebs_csi" {
   cluster_name                = aws_eks_cluster.main.name
   addon_name                  = "aws-ebs-csi-driver"
   addon_version               = data.aws_eks_addon_version.ebs_csi.version
-  resolve_conflicts_on_create = "OVERWRITE"
-  resolve_conflicts_on_update = "OVERWRITE"
+  resolve_conflicts_on_create = "OVERWRITE"             #If addon already exists:Replace it
+  resolve_conflicts_on_update = "OVERWRITE"             #Updates existing addon.
 
   depends_on = [
     aws_eks_node_group.main,

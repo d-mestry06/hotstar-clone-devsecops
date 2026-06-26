@@ -12,6 +12,8 @@ pipeline {
         REACT_APP_TMDB_API_KEY = credentials('tmdb-api-key')
         TRIVY_SEVERITY      = 'HIGH,CRITICAL'
         SLACK_CHANNEL       = '#dec-2025-monitoring'
+        GITOPS_REPO = 'https://github.com/d-mestry06/hotstar-clone-devsecops-gitops.git'
+        GITOPS_BRANCH = 'main'
     }
 
     options {
@@ -163,54 +165,58 @@ pipeline {
             }
         }
 
-        stage('Deploy to EKS') {
+        stage('Update GitOps Repository') {
             steps {
-                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'aws-credentials']]) {
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'github-token',
+                        usernameVariable: 'GITHUB_USER',
+                        passwordVariable: 'GITHUB_TOKEN'
+                    )
+                ]) {
                     sh """
-                        aws eks update-kubeconfig \
-                            --region ${AWS_REGION} \
-                            --name ${EKS_CLUSTER}
+                        rm -rf gitops
 
-                        sed -i 's|IMAGE_PLACEHOLDER|${FULL_IMAGE}|g' k8s/deployment.yaml
+                        git clone https://\$GITHUB_USER:\$GITHUB_TOKEN@github.com/<YOUR_GITHUB_USERNAME>/hotstar-clone-devsecops-gitops.git gitops
 
-                        kubectl apply -f k8s/
+                        cd gitops/k8s/overlays/prod
 
-                        kubectl rollout status deployment/hotstar-app -n hotstar --timeout=300s
+                        kustomize edit set image hotstar-app=${FULL_IMAGE}
+
+                        git config user.name "Jenkins"
+                        git config user.email "jenkins@local"
+
+                        git add .
+
+                        if git diff --cached --quiet; then
+                            echo "No changes detected."
+                        else
+                            git commit -m "Deploy image ${IMAGE_TAG}"
+                            git push origin main
+                        fi
                     """
                 }
             }
         }
 
-        stage('Setup Monitoring') {
-            when {
-                anyOf {
-                    branch 'main'
-                    expression { env.GIT_BRANCH ==~ /.*main/ }
-                }
-            }
+        stage('Smoke Test') {
             steps {
-                withCredentials([
-                    [$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'aws-credentials'],
-                    string(credentialsId: 'slack-webhook-url',      variable: 'SLACK_WEBHOOK_URL'),
-                    string(credentialsId: 'grafana-admin-password', variable: 'GRAFANA_ADMIN_PASSWORD')
-                ]) {
+                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'aws-credentials']]) {
                     sh """
-                        if ! command -v helm &>/dev/null; then
-                            curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-                        fi
-                        helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-                        helm repo update
-                        kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
-                        helm upgrade --install prometheus \
-                            prometheus-community/kube-prometheus-stack \
-                            --namespace monitoring \
-                            --version 58.3.0 \
-                            --values monitoring/prometheus-values.yaml \
-                            --set grafana.adminPassword=\${GRAFANA_ADMIN_PASSWORD} \
-                            --set alertmanager.config.global.slack_api_url=\${SLACK_WEBHOOK_URL} \
-                            --wait --timeout 10m
-                        kubectl apply -f monitoring/alert-rules.yaml
-                        kubectl apply -f monitoring/servicemonitor.yaml
+                        aws eks update-kubeconfig --region ${AWS_REGION} --name ${EKS_CLUSTER}
+                        echo "Waiting for Load Balancer to provision..."
+                        for i in \$(seq 1 20); do
+                            APP_URL=\$(kubectl get svc hotstar-service -n hotstar -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+                            if [ -n "\$APP_URL" ]; then
+                                echo "Load Balancer ready: \$APP_URL"
+                                sleep 10
+                                curl -f http://\${APP_URL}/health && echo "Smoke test PASSED" && exit 0
+                            fi
+                            echo "Waiting... attempt \$i/20"
+                            sleep 15
+                        done
+                        echo "Load Balancer not ready after 5 minutes"
+                        exit 1
                     """
                 }
             }
@@ -253,28 +259,7 @@ pipeline {
             }
         }
 
-        stage('Smoke Test') {
-            steps {
-                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'aws-credentials']]) {
-                    sh """
-                        aws eks update-kubeconfig --region ${AWS_REGION} --name ${EKS_CLUSTER}
-                        echo "Waiting for Load Balancer to provision..."
-                        for i in \$(seq 1 20); do
-                            APP_URL=\$(kubectl get svc hotstar-service -n hotstar -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
-                            if [ -n "\$APP_URL" ]; then
-                                echo "Load Balancer ready: \$APP_URL"
-                                sleep 10
-                                curl -f http://\${APP_URL}/health && echo "Smoke test PASSED" && exit 0
-                            fi
-                            echo "Waiting... attempt \$i/20"
-                            sleep 15
-                        done
-                        echo "Load Balancer not ready after 5 minutes"
-                        exit 1
-                    """
-                }
-            }
-        }
+        
     }
 
     post {

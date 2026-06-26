@@ -1,0 +1,12 @@
+config:
+  clients:
+    - url: http://loki:3100/loki/api/v1/push
+
+daemonset:
+  enabled: true
+
+deployment:
+  enabled: false
+
+serviceMonitor:
+  enabled: true

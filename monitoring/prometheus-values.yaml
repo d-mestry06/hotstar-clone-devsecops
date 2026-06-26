@@ -122,7 +122,7 @@ alertmanager:
       group_wait: 10s
       group_interval: 30s
       repeat_interval: 1m
-      receiver: slack-default
+      receiver: null-receiver
       routes:
         - matchers:
           - alertname = Watchdog

@@ -177,7 +177,7 @@ pipeline {
                     sh """
                         rm -rf gitops
 
-                        git clone https://\$GITHUB_USER:\$GITHUB_TOKEN@github.com/<YOUR_GITHUB_USERNAME>/hotstar-clone-devsecops-gitops.git gitops
+                        git clone https://\$GITHUB_USER:\$GITHUB_TOKEN@github.com/d-mestry06/hotstar-clone-devsecops-gitops.git gitops
 
                         cd gitops/k8s/overlays/prod
 

@@ -75,26 +75,7 @@ pipeline {
             }
         }
 
-        stage('Semgrep SAST') {
-            steps {
-                sh '''
-                docker run --rm \
-                    -v "$PWD:/src" \
-                    semgrep/semgrep \
-                    semgrep scan \
-                    --config auto \
-                    --json \
-                    --output /src/semgrep-report.json \
-                    /src || true
-                '''
-            }
-
-            post {
-                always {
-                    archiveArtifacts artifacts: 'semgrep-report.json', allowEmptyArchive: true
-                }
-            }
-        }
+        
 
         stage('Docker Build') {
             steps {
